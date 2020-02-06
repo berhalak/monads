@@ -1,12 +1,11 @@
 type Constructor<T> = new (...args: any) => T;
 type PipeConstructor<T, A> = new (inner: A) => T;
 
-type VoidLike = void | PromiseLike<void>;
 type PromLike<T> = T | PromiseLike<T>;
 
 export class AsyncMonad<Self> {
 
-	finally(selector: (arg: Self) => VoidLike): AsyncMonad<Self> {
+	finally(selector: (arg: Self) => PromLike<any>): AsyncMonad<Self> {
 		return AsyncMonad.fromValue<Self>(async () => {
 			let self: Self = null;
 			try {
@@ -26,7 +25,7 @@ export class AsyncMonad<Self> {
 		}
 	}
 
-	catch(selector: (arg: any) => void | PromiseLike<void>): AsyncMonad<Self> {
+	catch(selector: (arg: any) => PromLike<any>): AsyncMonad<Self> {
 		return AsyncMonad.fromValue<Self>(async () => {
 			try {
 				const self = await this.value();
@@ -107,7 +106,7 @@ export class AsyncMonad<Self> {
 		});
 	}
 
-	do(selector: (arg: Self) => PromiseLike<void> | void): AsyncMonad<Self> {
+	do(selector: (arg: Self) => PromLike<any>): AsyncMonad<Self> {
 		return AsyncMonad.fromValue(async () => {
 			const self = await this.value();
 			if (self !== null) {
@@ -130,7 +129,7 @@ export interface Monad<From> extends Unit<From> {
 	value(): From;
 	ifNone<T>(selector: () => T): Monad<T>;
 	ifSome<T>(selector: (self: From) => T): Monad<T>;
-	do(selector: (arg: From) => void): Monad<From>;
+	do(selector: (arg: From) => any): Monad<From>;
 	finally(selector: (arg: From) => void): Monad<From>;
 	catch(selector: (arg: any) => void): Monad<From>;
 	wait<To>(tran: (self: From) => PromLike<To>): AsyncMonad<To>;
@@ -232,7 +231,7 @@ export class Maybe<From> implements Monad<From> {
 		return new Maybe<T>(value);
 	}
 
-	do(selector: (arg: From) => void): Monad<From> {
+	do(selector: (arg: From) => any): Monad<From> {
 		const value = () => {
 			const self = this.value();
 			if (self != null)
