@@ -2,3 +2,4 @@ jest.config.js
 tsconfig.json
 **/*.spec.*
 **/run.*
+src/
