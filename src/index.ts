@@ -73,11 +73,11 @@ export class AsyncMonad<Self> {
 	}
 
 
-	flat<T>(tran: (self: Self) => Monad<T>): AsyncMonad<T> {
+	flat<T>(tran: (self: Self) => PromLike<Unit<PromLike<T>>>): AsyncMonad<T> {
 		return AsyncMonad.fromValue(async () => {
 			const self = await this.value();
 			if (self !== null) {
-				return tran(self).value();
+				return await (await tran(self)).value();
 			}
 			return null;
 		});
@@ -119,66 +119,37 @@ export class AsyncMonad<Self> {
 	}
 }
 
-export interface Monad<Self> {
-	map<Mapped>(tran: (self: Self) => Mapped): Monad<Mapped>;
-	flat<T>(tran: (self: Self) => Monad<T>): Monad<T>;
-	pipe<T>(tran: new (arg: () => Self) => Monad<T>): Monad<T>;
-	value(): Self;
-	ifNone<T>(selector: () => T): Monad<T>;
-	ifSome<T>(selector: (self: Self) => T): Monad<T>;
-	do(selector: (arg: Self) => void): Monad<Self>;
-	finally(selector: (arg: Self) => void): Monad<Self>;
-	catch(selector: (arg: any) => void): Monad<Self>;
-	wait<Mapped>(tran: (self: Self) => PromiseLike<Mapped> | Mapped): AsyncMonad<Mapped>;
-
-}
-
-export type Accessor<T> = () => T;
-
 export interface Unit<T> {
 	value(): T;
 }
 
-function map<T>(unit: Unit<T> | Accessor<T> | T) {
-	return new Maybe<T>(() => {
-		if (!unit) return new None<T>();
-
-		if (typeof unit == 'function') {
-			return (unit as Accessor<T>)();
-		}
-		if (typeof unit == 'object' && typeof (unit as any).value == 'function') {
-			return (unit as any).value();
-		}
-		return new Maybe<T>(unit as T);
-	});
+export interface Monad<From> extends Unit<From> {
+	map<To>(tran: (self: From) => To): Monad<To>;
+	flat<To>(tran: (self: From) => Unit<To>): Monad<To>;
+	cache(): Monad<From>;
+	value(): From;
+	ifNone<T>(selector: () => T): Monad<T>;
+	ifSome<T>(selector: (self: From) => T): Monad<T>;
+	do(selector: (arg: From) => void): Monad<From>;
+	finally(selector: (arg: From) => void): Monad<From>;
+	catch(selector: (arg: any) => void): Monad<From>;
+	wait<To>(tran: (self: From) => PromLike<To>): AsyncMonad<To>;
+	wait(): AsyncMonad<From extends PromiseLike<infer R> ? R : never>;
 }
 
+export type Accessor<T> = () => T;
 
+export class Maybe<From> implements Monad<From> {
+	cache(): Monad<From> {
+		let item: From = null;
+		return new Maybe<From>(() => {
+			return item ?? (item = this.value());
+		});
+	}
 
-
-function wait<T>(unit: PromLike<T> | Unit<PromLike<T>> | Accessor<PromLike<T>>) {
-	return AsyncMonad.fromValue<T>(async () => {
-		if (unit === null) return null;
-		if (typeof unit == 'function') {
-			return await (unit as Accessor<PromLike<T>>)();
-		}
-		if (typeof unit == 'object' && typeof (unit as any).value == 'function') {
-			return await (unit as any).value();
-		}
-		if (unit instanceof Promise || typeof (unit as Promise<T>).then == 'function') {
-			return await (unit as any)();
-		}
-		return unit as T;
-	});
-}
-
-export { map, wait };
-
-
-export class Maybe<Self> implements Monad<Self> {
-	finally(selector: (arg: Self) => void): Monad<Self> {
-		return new Maybe<Self>(() => {
-			let self: Self = null;
+	finally(selector: (arg: From) => void): Monad<From> {
+		return new Maybe<From>(() => {
+			let self: From = null;
 			try {
 				self = this.value();
 				return self;
@@ -187,8 +158,8 @@ export class Maybe<Self> implements Monad<Self> {
 			}
 		})
 	}
-	catch(selector: (arg: any) => void): Monad<Self> {
-		return new Maybe<Self>(() => {
+	catch(selector: (arg: any) => void): Monad<From> {
+		return new Maybe<From>(() => {
 			try {
 				const self = this.value();
 				return self;
@@ -199,24 +170,24 @@ export class Maybe<Self> implements Monad<Self> {
 		})
 	}
 
-	wait<Mapped>(tran: (self: Self) => Mapped | PromiseLike<Mapped>): AsyncMonad<Mapped> {
+	wait<Mapped = From>(tran?: (self: From) => Mapped | PromiseLike<Mapped>): AsyncMonad<Mapped> {
 		return AsyncMonad.fromValue<Mapped>(async () => {
 			const value = this.value ? this.value() : null;
 			if (value !== null) {
-				return await tran(value);
+				return tran ? await tran(value) : await value as any as Mapped;
 			}
 			return null;
 		});
 	}
 
 
-	pipe<T>(tran: new (arg: Accessor<Self>) => Monad<T>): Monad<T> {
-		return new tran(this.value);
+	pipe<T>(tran: new (arg: Accessor<From>) => Unit<T>): Monad<T> {
+		return new Maybe<T>(() => new tran(this.value).value());
 	}
 
-	map<Mapped>(tran: (self: Self) => Mapped): Monad<Mapped> {
+	map<Mapped>(tran: (self: From) => Mapped): Monad<Mapped> {
 		const value = () => {
-			const self: Self = this.value ? this.value() : null;
+			const self: From = this.value ? this.value() : null;
 			if (self != null) {
 				return tran(self);
 			}
@@ -226,9 +197,10 @@ export class Maybe<Self> implements Monad<Self> {
 	}
 
 
-	flat<T>(tran: (self: Self) => Monad<T>): Monad<T> {
+
+	flat<T>(tran: (self: From) => Unit<T>): Monad<T> {
 		const value = () => {
-			const self: Self = this.value ? this.value() : null;
+			const self: From = this.value ? this.value() : null;
 			if (self != null) {
 				return tran(self).value();
 			}
@@ -238,7 +210,7 @@ export class Maybe<Self> implements Monad<Self> {
 		return new Maybe<T>(value);
 	}
 
-	value: () => Self;
+	value: () => From;
 
 	ifNone<T>(selector: () => T): Monad<T> {
 		const value = () => {
@@ -250,7 +222,7 @@ export class Maybe<Self> implements Monad<Self> {
 		return new Maybe<T>(value);
 	}
 
-	ifSome<T>(selector: (arg: Self) => T): Monad<T> {
+	ifSome<T>(selector: (arg: From) => T): Monad<T> {
 		const value = () => {
 			const self = this.value();
 			if (self !== null)
@@ -260,18 +232,18 @@ export class Maybe<Self> implements Monad<Self> {
 		return new Maybe<T>(value);
 	}
 
-	do(selector: (arg: Self) => void): Monad<Self> {
+	do(selector: (arg: From) => void): Monad<From> {
 		const value = () => {
 			const self = this.value();
 			if (self != null)
 				selector(self);
 			return self;
 		};
-		return new Maybe<Self>(value);
+		return new Maybe<From>(value);
 	}
 
-	constructor(value: Self)
-	constructor(value: () => Self)
+	constructor(value: From)
+	constructor(value: () => From)
 	constructor(value: any) {
 		this.value = typeof value == 'function' ? value : () => value;
 	}
@@ -300,9 +272,6 @@ export class Lift {
 	}
 }
 
-export function some<T>(arg: T) {
-	return new Some(arg);
-}
 
 export function none<T>() {
 	return new None<T>();
@@ -311,11 +280,11 @@ export function none<T>() {
 type Fun<T> = T extends ((...args: any[]) => any) ? T : never;
 type FunParams<T> = T extends ((...args: any[]) => any) ? Parameters<T> : never;
 
-export function from<T extends Function>(arg: T): (...params: FunParams<T>) => Monad<ReturnType<Fun<T>>> {
+export function build<T extends Function>(arg: T): (...params: FunParams<T>) => Monad<ReturnType<Fun<T>>> {
 	return (...params: any[]) => new Maybe(arg(...params));
 }
 
-export function fromAsync<T extends Function>(arg: T): (...params: FunParams<T>) => AsyncMonad<ReturnType<Fun<T>>> {
+export function buildAsync<T extends Function>(arg: T): (...params: FunParams<T>) => AsyncMonad<ReturnType<Fun<T>>> {
 	return (...params: any[]) => AsyncMonad.fromValue(arg(...params));
 }
 
@@ -393,4 +362,61 @@ export class Identity {
 		};
 		return new Maybe<this>(value);
 	}
+}
+
+
+
+
+/// unified
+
+type MonadFlat<T> = T extends () => infer R ? R
+	: T extends { value(): infer R } ? R
+	: T extends { value: infer R } ? R
+	: T;
+
+
+export function from<T>(arg: T): Monad<MonadFlat<T>> {
+	type V = MonadFlat<T>;
+	if (arg == null) return new None<V>();
+	if (typeof arg == 'function') return new Maybe<V>(arg as Fun<V>);
+	if (typeof arg == 'object' && (arg as any).value && typeof (arg as any).value == 'function') new Maybe<V>(() => (arg as any).value());
+	if (typeof arg == 'object' && (arg as any).value && typeof (arg as any).value) new Maybe<V>(() => (arg as any).value);
+	return new Maybe<V>(arg as V);
+}
+
+type MonadSome<T> = T extends () => infer R ? R
+	: T;
+
+
+export function some<T>(arg: T): Monad<MonadSome<T>> {
+	type V = MonadSome<T>;
+	if (arg == null) return new None<V>();
+	if (typeof arg == 'function') return new Maybe<V>(arg as Fun<V>);
+	return new Maybe<V>(arg as V);
+}
+
+
+
+/// waits
+
+type PromiseType<T> = T extends PromLike<infer R> ? R : T;
+type AsyncFlat<T> = PromiseType<MonadFlat<T>>;
+
+export function wait<T>(arg: T): AsyncMonad<AsyncFlat<T>> {
+	type V = AsyncFlat<T>;
+
+	if (arg == null) return new AsyncMonad<V>();
+
+	return AsyncMonad.fromValue<V>(async () => {
+		if (arg == null) return null;
+		const typed = arg as any;
+		if (typeof arg == 'function') return await typed();
+		if (typeof arg == 'object' && (arg as any).value && typeof (arg as any).value == 'function') {
+			return await (await typed).value();
+		}
+		if (typeof arg == 'object' && (arg as any).value && typeof (arg as any).value) {
+			return await (await typed).value;
+		}
+		return await arg;
+	});
 }

@@ -1,4 +1,4 @@
-import { Some, Identity, Maybe, Accessor, Lift, some, none, wait } from ".";
+import { Some, Identity, Maybe, Accessor, Lift, some, none, wait, from, Unit } from ".";
 
 function test(condition: boolean) {
 	if (!condition) {
@@ -24,50 +24,49 @@ async function main() {
 
 	try {
 
-		equals(2, new Some(1).map(x => x + 1).value());
 
-		class Prefix extends Lift {
+		class Person {
+			name = "bob";
+		}
+
+		let i = 0;
+
+
+		class Employee {
 			constructor(private name: string) {
-				super();
-			}
-
-			print() {
-				return this.name;
+				i++;
 			}
 		}
 
-		class Suffix extends Prefix {
-			constructor(name: Prefix, suffix: string) {
-				super(name.print() + suffix);
+
+		class EmployeePerson {
+			constructor(private p: Person) {
+
+			}
+			value() {
+				return new Employee(this.p.name);
 			}
 		}
 
-		equals("abc", some(new Prefix("a")).map(x => x.print() + "bc").value());
-		equals("abc", new Some("a").flat(x => new Some(x + "b").map(y => y + "c")).value());
-		equals("test", new Prefix("te").lift()
-			.map(x => new Suffix(x, "st"))
-			.map(x => x.print())
-			.value());
-
-
-		// async monad
-
-		async function down(p: Prefix) {
-			return new Suffix(p, "st");
+		async function get(): Promise<Person> {
+			return new Person();
 		}
 
-		const r = await some(new Prefix("te")).wait(async x => down(x)).map(x => x.print());
-
-		const n = await none<number>().wait(async () => 4).ifNone(() => 5).finally(x => console.log(x));
-
-		equals(n, 5);
-
-		equals(r, "test");
 
 
-		wait(async () => 6).map(x => x + 4);
-		class Holder { async value() { return 4 } };
-		await wait(new Holder()).map(x => x / 2).value() == 2;
+		const emp =
+			some(() => get()).wait()
+				.flat(x => new EmployeePerson(x));
+
+		emp.value();
+		emp.value();
+		emp.value();
+		emp.value();
+		emp.value();
+		emp.value();
+
+		equals(0, i);
+
 
 	} finally {
 		console.log("Finished");
