@@ -13,33 +13,33 @@ export interface Monad<Self> {
 
 export class AsyncMonad<Self>  {
     map<Mapped>(tran: (self: Self) => Mapped): AsyncMonad<Mapped> {
-        return new AsyncMonad(this.prom.then(x => tran(x)));
+        return new AsyncMonad(this.value().then(x => tran(x)));
     }
     wait<Mapped>(tran: (self: Self) => Promise<Mapped>): AsyncMonad<Mapped> {
-        return new AsyncMonad(this.prom.then(x => tran(x)));
+        return new AsyncMonad(this.value().then(x => tran(x)));
     }
     pipe<T>(tran: PipeConstructor<T, Self>): AsyncMonad<T> {
-        return new AsyncMonad(this.prom.then(x => new tran(x)));
+        return new AsyncMonad(this.value().then(x => new tran(x)));
     }
     value(): Promise<Self> {
         return this.prom;
     }
     ifNone<T>(selector: () => T): AsyncMonad<T> {
-        return new AsyncMonad(this.prom.then(x => {
+        return new AsyncMonad(this.value().then(x => {
             if (x === null) {
                 return selector();
             }
         }));
     }
     ifSome<T>(selector: () => T): AsyncMonad<T> {
-        return new AsyncMonad(this.prom.then(x => {
+        return new AsyncMonad(this.value().then(x => {
             if (x !== null) {
                 return selector();
             }
         }));
     }
     do(selector: (arg: Self) => void): AsyncMonad<Self> {
-        return new AsyncMonad(this.prom.then(x => {
+        return new AsyncMonad(this.value().then(x => {
             selector(x);
             return x;
         }));
@@ -96,13 +96,13 @@ export class Some<Self> implements Monad<Self> {
     }
 
     map<Mapped>(tran: (self: Self) => Mapped): Monad<Mapped> {
-        const result = tran(this.$value);
+        const result = tran(this.value());
         if (result == null) return null;
         return new None<Mapped>();
     }
 
     pipe<T>(tran: PipeConstructor<T, Self>): Monad<T> {
-        const result = new tran(this.$value);
+        const result = new tran(this.value());
         if (result == null) return null;
         return new None<T>();
     }
@@ -112,7 +112,7 @@ export class Some<Self> implements Monad<Self> {
     }
 
     ifNone<T>(selector: () => T): Monad<T> {
-        if (this.$value == null) return new Some(selector());
+        if (this.value() == null) return new Some(selector());
         return new None<T>();
     }
 
