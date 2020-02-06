@@ -5,6 +5,11 @@
 	"description": "Typescript monads",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
+	"keywords": [
+		"typescript",
+		"monads",
+		"functional"
+	],
 	"scripts": {
 		"test": "nodemon ./src/test.ts",
 		"build": "tsc",
