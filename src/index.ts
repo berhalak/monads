@@ -98,18 +98,19 @@ export interface Monad<Self> {
 	ifNone<T>(selector: () => T): Monad<T>;
 	ifSome<T>(selector: (self: Self) => T): Monad<T>;
 	do(selector: (arg: Self) => void): Monad<Self>;
-
-	wait<T>(selector: (arg: Self) => PromiseLike<T>): AsyncMonad<T>;
+	wait<T>(tran?: (self: Self extends PromiseLike<infer R> ? R : never) => T): AsyncMonad<Self extends PromiseLike<infer R> ? R : never>;
 }
 
 export type Unit<T> = () => T;
 
 export class Maybe<Self> implements Monad<Self> {
 
-	wait<T>(selector: (arg: Self) => PromiseLike<T>): AsyncMonad<T> {
+	wait<T>(tran?: (self: Self extends PromiseLike<infer R> ? R : never) => T): AsyncMonad<Self extends PromiseLike<infer R> ? R : never> {
 		return AsyncMonad.fromValue(async () => {
-			return await selector(await this.value());
-		})
+			const self = await this.value() as any;
+			if (self !== null && tran) return tran(self);
+			return self;
+		});
 	}
 
 	pipe<T>(tran: new (arg: Unit<Self>) => Monad<T>): Monad<T> {
@@ -279,11 +280,5 @@ export class Identity {
 			return self;
 		};
 		return new Maybe<this>(value);
-	}
-
-	wait<T>(selector: (arg: this) => PromiseLike<T>): AsyncMonad<T> {
-		return AsyncMonad.fromValue(async () => {
-			return await selector(await this.value());
-		})
 	}
 }
