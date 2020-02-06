@@ -3,6 +3,8 @@ type PipeConstructor<T, A> = new (inner: A) => T;
 
 type PromLike<T> = T | PromiseLike<T>;
 
+export type Future<T> = Unit<PromiseLike<T>>
+
 export class AsyncMonad<Self> {
 
 	finally(selector: (arg: Self) => PromLike<any>): AsyncMonad<Self> {
