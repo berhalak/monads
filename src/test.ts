@@ -1,4 +1,4 @@
-import { Some, Identity, Maybe, Unit, Lift, some } from ".";
+import { Some, Identity, Maybe, Unit, Lift, some, none } from ".";
 
 function test(condition: boolean) {
 	if (!condition) {
@@ -57,6 +57,10 @@ async function main() {
 		}
 
 		const r = await some(new Prefix("te")).wait(async x => down(x)).map(x => x.print());
+
+		const n = none<number>().ifNone(async () => 0).wait(x => x + 4);
+
+		equals(n, 4);
 
 		equals(r, "test")
 

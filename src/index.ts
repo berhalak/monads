@@ -145,7 +145,7 @@ export class Maybe<Self> implements Monad<Self> {
 	ifNone<T>(selector: () => T): Monad<T> {
 		const value = () => {
 			const self = this.value();
-			if (self != null)
+			if (self === null)
 				return selector();
 			return null;
 		};
@@ -155,7 +155,7 @@ export class Maybe<Self> implements Monad<Self> {
 	ifSome<T>(selector: (arg: Self) => T): Monad<T> {
 		const value = () => {
 			const self = this.value();
-			if (self != null)
+			if (self !== null)
 				return selector(self);
 			return null;
 		};
@@ -189,6 +189,11 @@ export class None<Self> extends Maybe<Self> {
 	constructor() {
 		super(() => null as Self);
 	}
+
+	ifNone<T>(selector: () => T): Monad<T> {
+		return new Maybe<T>(selector);
+	}
+
 }
 
 export class Lift {
@@ -202,11 +207,15 @@ export function some<T>(arg: T) {
 }
 
 export function none<T>() {
-	return new None();
+	return new None<T>();
 }
 
 export function from<T>(arg: () => T) {
 	return new Maybe(arg);
+}
+
+export function wait<T>(prom: PromiseLike<T>) {
+	return AsyncMonad.fromValue(() => prom);
 }
 
 
@@ -270,5 +279,11 @@ export class Identity {
 			return self;
 		};
 		return new Maybe<this>(value);
+	}
+
+	wait<T>(selector: (arg: this) => PromiseLike<T>): AsyncMonad<T> {
+		return AsyncMonad.fromValue(async () => {
+			return await selector(await this.value());
+		})
 	}
 }
