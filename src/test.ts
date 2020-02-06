@@ -56,13 +56,16 @@ async function main() {
 			return new Suffix(p, "st");
 		}
 
-		const r = await some(new Prefix("te")).map(async x => down(x)).wait().map(x => x.print());
+		const r = await some(new Prefix("te")).wait(async x => down(x)).map(x => x.print());
 
-		const n = await none<number>().ifNone(async () => 4).wait();
+		const n = await none<number>().wait(async () => 4).ifNone(() => 5).finally(x => console.log(x));
 
-		equals(n, 4);
+		equals(n, 5);
 
-		equals(r, "test")
+		equals(r, "test");
+
+
+		some(5).wait(async x => 6).map(x => x + 4);
 
 	} finally {
 		console.log("Finished");
