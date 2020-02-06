@@ -1,4 +1,4 @@
-import { Some, Identity, Maybe, Unit, Lift, some, none } from ".";
+import { Some, Identity, Maybe, Accessor, Lift, some, none, wait } from ".";
 
 function test(condition: boolean) {
 	if (!condition) {
@@ -65,7 +65,9 @@ async function main() {
 		equals(r, "test");
 
 
-		some(5).wait(async x => 6).map(x => x + 4);
+		wait(async () => 6).map(x => x + 4);
+		class Holder { async value() { return 4 } };
+		await wait(new Holder()).map(x => x / 2).value() == 2;
 
 	} finally {
 		console.log("Finished");
