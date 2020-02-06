@@ -1,158 +1,274 @@
 type Constructor<T> = new (...args: any) => T;
 type PipeConstructor<T, A> = new (inner: A) => T;
 
+export class AsyncMonad<Self> {
+
+	async then<T>(ok: (arg: Self) => PromiseLike<T> | T, fail: (reason: any) => T | PromiseLike<T>) {
+		try {
+			return await ok(await this.value());
+		} catch (e) {
+			await fail(e);
+		}
+	}
+
+
+	static fromValue<Self>(tran: () => PromiseLike<Self>): AsyncMonad<Self> {
+		const m = new AsyncMonad<Self>();
+		m.value = tran;
+		return m;
+	}
+
+
+	wait<T>(selector: (arg: Self) => PromiseLike<T>): AsyncMonad<T> {
+		return AsyncMonad.fromValue(async () => {
+			return await selector(await this.value());
+		})
+	}
+
+	pipe<T>(tran: new (arg: Unit<Self>) => Monad<T>): AsyncMonad<T> {
+		return AsyncMonad.fromValue(async () => {
+			const self = await this.value();
+			if (self != null) {
+				return new tran(() => self).value();
+			}
+			return null;
+		});
+	}
+
+	map<Mapped>(tran: (self: Self) => Mapped): AsyncMonad<Mapped> {
+		return AsyncMonad.fromValue(async () => {
+			const self = await this.value();
+			if (self !== null) {
+				return tran(self);
+			}
+			return null;
+		});
+	}
+
+
+	flat<T>(tran: (self: Self) => Monad<T>): AsyncMonad<T> {
+		return AsyncMonad.fromValue(async () => {
+			const self = await this.value();
+			if (self !== null) {
+				return tran(self).value();
+			}
+			return null;
+		});
+	}
+
+	value: () => PromiseLike<Self>;
+
+	ifNone<T>(selector: () => T): AsyncMonad<T> {
+		return AsyncMonad.fromValue(async () => {
+			const self = await this.value();
+			if (self === null) {
+				return selector();
+			}
+			return null;
+		});
+	}
+
+	ifSome<T>(selector: (arg: Self) => T): AsyncMonad<T> {
+		return AsyncMonad.fromValue(async () => {
+			const self = await this.value();
+			if (self !== null) {
+				return selector(self);
+			}
+			return null;
+		});
+	}
+
+	do(selector: (arg: Self) => PromiseLike<void> | void): AsyncMonad<Self> {
+		return AsyncMonad.fromValue(async () => {
+			const self = await this.value();
+			if (self !== null) {
+				await selector(self)
+				return self;
+			}
+			return null;
+		});
+	}
+}
+
 export interface Monad<Self> {
 	map<Mapped>(tran: (self: Self) => Mapped): Monad<Mapped>;
-	wait<Mapped>(tran: (self: Self) => Promise<Mapped>): AsyncMonad<Mapped>;
-	pipe<T>(tran: PipeConstructor<T, Self>): Monad<T>;
+	flat<T>(tran: (self: Self) => Monad<T>): Monad<T>;
+	pipe<T>(tran: new (arg: () => Self) => Monad<T>): Monad<T>;
 	value(): Self;
 	ifNone<T>(selector: () => T): Monad<T>;
-	ifSome<T>(selector: () => T): Monad<T>;
-	do(selector: (arg: Self) => void): this;
+	ifSome<T>(selector: (self: Self) => T): Monad<T>;
+	do(selector: (arg: Self) => void): Monad<Self>;
+
+	wait<T>(selector: (arg: Self) => PromiseLike<T>): AsyncMonad<T>;
 }
 
-export class AsyncMonad<Self>  {
-	map<Mapped>(tran: (self: Self) => Mapped): AsyncMonad<Mapped> {
-		return new AsyncMonad(this.value().then(x => tran(x)));
-	}
-	wait<Mapped>(tran: (self: Self) => Promise<Mapped>): AsyncMonad<Mapped> {
-		return new AsyncMonad(this.value().then(x => tran(x)));
-	}
-	pipe<T>(tran: PipeConstructor<T, Self>): AsyncMonad<T> {
-		return new AsyncMonad(this.value().then(x => new tran(x)));
-	}
-	value(): Promise<Self> {
-		return this.prom;
-	}
-	ifNone<T>(selector: () => T): AsyncMonad<T> {
-		return new AsyncMonad(this.value().then(x => {
-			if (x === null) {
-				return selector();
-			}
-		}));
-	}
-	ifSome<T>(selector: () => T): AsyncMonad<T> {
-		return new AsyncMonad(this.value().then(x => {
-			if (x !== null) {
-				return selector();
-			}
-		}));
-	}
-	do(selector: (arg: Self) => void): AsyncMonad<Self> {
-		return new AsyncMonad(this.value().then(x => {
-			selector(x);
-			return x;
-		}));
+export type Unit<T> = () => T;
+
+export class Maybe<Self> implements Monad<Self> {
+
+	wait<T>(selector: (arg: Self) => PromiseLike<T>): AsyncMonad<T> {
+		return AsyncMonad.fromValue(async () => {
+			return await selector(await this.value());
+		})
 	}
 
-	constructor(private prom: Promise<Self>) {
+	pipe<T>(tran: new (arg: Unit<Self>) => Monad<T>): Monad<T> {
+		return new tran(this.value);
+	}
 
+	map<Mapped>(tran: (self: Self) => Mapped): Monad<Mapped> {
+		const value = () => {
+			const self: Self = this.value ? this.value() : null;
+			if (self != null) {
+				return tran(self);
+			}
+			return null as Mapped;
+		};
+		return new Maybe<Mapped>(value);
+	}
+
+
+	flat<T>(tran: (self: Self) => Monad<T>): Monad<T> {
+		const value = () => {
+			const self: Self = this.value ? this.value() : null;
+			if (self != null) {
+				return tran(self).value();
+			}
+			return null as T;
+		};
+
+		return new Maybe<T>(value);
+	}
+
+	value: () => Self;
+
+	ifNone<T>(selector: () => T): Monad<T> {
+		const value = () => {
+			const self = this.value();
+			if (self != null)
+				return selector();
+			return null;
+		};
+		return new Maybe<T>(value);
+	}
+
+	ifSome<T>(selector: (arg: Self) => T): Monad<T> {
+		const value = () => {
+			const self = this.value();
+			if (self != null)
+				return selector(self);
+			return null;
+		};
+		return new Maybe<T>(value);
+	}
+
+	do(selector: (arg: Self) => void): Monad<Self> {
+		const value = () => {
+			const self = this.value();
+			if (self != null)
+				selector(self);
+			return self;
+		};
+		return new Maybe<Self>(value);
+	}
+
+	constructor(value: Self)
+	constructor(value: () => Self)
+	constructor(value: any) {
+		this.value = typeof value == 'function' ? value : () => value;
 	}
 }
+
+export class Some<Self> extends Maybe<Self> {
+	constructor(value: Self) {
+		super(value);
+	}
+}
+
+export class None<Self> extends Maybe<Self> {
+	constructor() {
+		super(() => null as Self);
+	}
+}
+
+export class Lift {
+	lift(): Monad<this> {
+		return new Some(this);
+	}
+}
+
+export function some<T>(arg: T) {
+	return new Some(arg);
+}
+
+export function none<T>() {
+	return new None();
+}
+
+export function from<T>(arg: () => T) {
+	return new Maybe(arg);
+}
+
 
 export class Identity {
 	map<Mapped>(tran: (self: this) => Mapped): Monad<Mapped> {
-		const result = tran(this);
-		if (result == null) return null;
-		return new None<Mapped>();
+		const value = () => {
+			const self = this.value ? this.value() : null;
+			if (self != null) {
+				return tran(self);
+			}
+			return null as Mapped;
+		};
+		return new Maybe<Mapped>(value);
 	}
 
-	wait<Mapped>(tran: (self: this) => Promise<Mapped>): AsyncMonad<Mapped> {
-		const result = tran(this);
-		return new AsyncMonad(result);
+	pipe<T>(tran: new (args: this) => Monad<T>): Monad<T> {
+		return new tran(this);
 	}
 
-	pipe<T>(tran: PipeConstructor<T, this>): Monad<T> {
-		const result = new tran(this);
-		if (result == null) return null;
-		return new None<T>();
-	}
+	flat<T>(tran: (self: this) => Monad<T>): Monad<T> {
+		const value = () => {
+			const self = this.value ? this.value() : null;
+			if (self != null) {
+				return tran(self).value();
+			}
+			return null as T;
+		};
 
-	value() {
-		return this;
-	}
-
-	ifNone<T>(selector: () => T): Monad<T> {
-		return new None<T>();
-	}
-
-	ifSome<T>(selector: () => T): Monad<T> {
-		return new Some(selector());
-	}
-
-	do(selector: (arg: this) => void): this {
-		selector(this);
-		return this;
-	}
-}
-
-export class Some<Self> implements Monad<Self> {
-	constructor(protected $value: Self = null) {
-	}
-
-	wait<Mapped>(tran: (self: Self) => Promise<Mapped>): AsyncMonad<Mapped> {
-		const result = tran(this.value());
-		return new AsyncMonad(result);
-	}
-
-	map<Mapped>(tran: (self: Self) => Mapped): Monad<Mapped> {
-		const result = tran(this.value());
-		if (result == null) return new None<Mapped>();;
-		return new Some(result);
-	}
-
-	pipe<T>(tran: PipeConstructor<T, Self>): Monad<T> {
-		const result = new tran(this.value());
-		if (result == null) return null;
-		return new Some(result);
+		return new Maybe<T>(value);
 	}
 
 	value() {
-		return this.$value;
+		return this;
 	}
 
 	ifNone<T>(selector: () => T): Monad<T> {
-		if (this.value() == null) return new Some(selector());
-		return new None<T>();
+		const value = () => {
+			const self = this.value();
+			if (self != null)
+				return selector();
+			return null;
+		};
+		return new Maybe<T>(value);
 	}
 
-	ifSome<T>(selector: () => T): Monad<T> {
-		return new Some(selector());
+	ifSome<T>(selector: (arg: this) => T): Monad<T> {
+		const value = () => {
+			const self = this.value();
+			if (self != null)
+				return selector(self);
+			return null;
+		};
+		return new Maybe<T>(value);
 	}
 
-	do(selector: (arg: Self) => void): this {
-		selector(this.value());
-		return this;
-	}
-}
-
-export class None<Self> implements Monad<Self> {
-	map<Mapped>(tran: (self: Self) => Mapped): Monad<Mapped> {
-		return new None<Mapped>();
-	}
-
-	wait<Mapped>(tran: (self: Self) => Promise<Mapped>): AsyncMonad<Mapped> {
-		return new AsyncMonad<Mapped>(null);
-	}
-
-	pipe<T>(tran: PipeConstructor<T, Self>): Monad<T> {
-		return new None<T>();
-	}
-
-	value(): Self {
-		return null;
-	}
-
-	ifNone<T>(selector: () => T): Monad<T> {
-		return new Some(selector());
-	}
-
-	ifSome<T>(selector: () => T): Monad<T> {
-		return new None<T>();
-	}
-
-	do(selector: (arg: Self) => void): this {
-		selector(this.value());
-		return this;
+	do(selector: (arg: this) => void): Monad<this> {
+		const value = () => {
+			const self = this.value();
+			if (self != null)
+				selector(self);
+			return self;
+		};
+		return new Maybe<this>(value);
 	}
 }
