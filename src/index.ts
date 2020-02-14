@@ -157,7 +157,7 @@ export class Maybe<From> implements Monad<From> {
 }
 
 
-export function from<T>(arg: T): Monad<FromReturn<T>> {
+export function lift<T>(arg: T): Monad<FromReturn<T>> {
 	return new Maybe<FromReturn<T>>(toUnitFunction(arg));
 }
 
@@ -325,3 +325,5 @@ export function wait<T>(arg: T): AMonad<PromUnit<T>> {
 		return await promToUnit(arg);
 	});
 }
+
+export { from } from "./iterable"
