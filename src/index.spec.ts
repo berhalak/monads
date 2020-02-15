@@ -61,4 +61,15 @@ test("iterators", async () => {
 		.first()
 
 	expect(t3).toStrictEqual(1);
+
+
+});
+
+test("iterables", async () => {
+
+	const list = new Set([1, 2, 3]);
+
+
+	expect(from(list).where(x => x > 2).first()).toBe(3);
+
 });

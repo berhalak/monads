@@ -119,6 +119,8 @@ export class From<T> extends Iter<T> {
     }
 }
 
+
+function from<T>(arg: Iterable<T>): Iter<T>
 function from<T>(arg: T[]): Iter<T>
 function from<T>(arg: any): Iter<T> {
     return new From(arg);
